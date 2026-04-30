@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live: Huisverkoop</title>
+<meta name="description" content="Liveblog over de verkoop van mijn huis">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --rood: #cc0000;
+    --rood-donker: #a30000;
+    --zwart: #1a1a1a;
+    --grijs: #6b6b6b;
+    --grijs-licht: #e5e5e5;
+    --grijs-zacht: #f5f5f5;
+    --wit: #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--zwart);
+    background: var(--wit);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .topbar {
+    background: var(--rood);
+    color: var(--wit);
+    padding: 10px 0;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+  }
+  .topbar .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .logo {
+    font-family: 'IBM Plex Serif', Georgia, serif;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+  }
+  .topbar-right {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.9;
+    text-align: right;
+  }
+
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 20px;
+  }
+
+  header.blog-header {
+    padding: 32px 0 24px;
+    border-bottom: 1px solid var(--grijs-licht);
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--rood);
+    color: var(--wit);
+    padding: 5px 10px 5px 9px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--wit);
+    border-radius: 50%;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  h1.blog-title {
+    font-family: 'IBM Plex Serif', Georgia, serif;
+    font-size: clamp(28px, 5vw, 40px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    margin-bottom: 12px;
+  }
+
+  .blog-subtitle {
+    font-size: 17px;
+    color: var(--grijs);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+
+  .meta-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--grijs);
+  }
+  .meta-bar strong { color: var(--zwart); font-weight: 600; }
+
+  main.timeline {
+    padding: 24px 0 60px;
+    position: relative;
+  }
+
+  article.post {
+    position: relative;
+    padding: 22px 0 22px 28px;
+    border-left: 2px solid var(--grijs-licht);
+    margin-left: 6px;
+  }
+  article.post:first-child {
+    border-left-color: var(--rood);
+  }
+  article.post::before {
+    content: '';
+    position: absolute;
+    left: -7px;
+    top: 28px;
+    width: 12px;
+    height: 12px;
+    background: var(--wit);
+    border: 2px solid var(--grijs-licht);
+    border-radius: 50%;
+  }
+  article.post:first-child::before {
+    background: var(--rood);
+    border-color: var(--rood);
+    box-shadow: 0 0 0 4px rgba(204, 0, 0, 0.15);
+  }
+
+  .post-time {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--rood);
+    letter-spacing: 0.02em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .post-date {
+    color: var(--grijs);
+    font-weight: 400;
+  }
+
+  .post-tag {
+    display: inline-block;
+    background: var(--zwart);
+    color: var(--wit);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 2px;
+  }
+  .post-tag.tag-rood { background: var(--rood); }
+  .post-tag.tag-groen { background: #2d7a3e; }
+
+  h2.post-title {
+    font-family: 'IBM Plex Serif', Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+    color: var(--zwart);
+  }
+
+  .post-content {
+    font-size: 16.5px;
+    line-height: 1.6;
+    color: var(--zwart);
+    word-wrap: break-word;
+  }
+  .post-content p { margin-bottom: 12px; }
+  .post-content p:last-child { margin-bottom: 0; }
+  .post-content a { color: var(--rood); text-decoration: underline; text-underline-offset: 2px; }
+  .post-content strong { font-weight: 600; }
+  .post-content em { font-style: italic; }
+
+  .post-image {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    margin: 14px 0 4px;
+    border-radius: 4px;
+    background: var(--grijs-zacht);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--grijs);
+  }
+  .empty-state h2 {
+    font-family: 'IBM Plex Serif', Georgia, serif;
+    color: var(--zwart);
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+
+  footer {
+    border-top: 1px solid var(--grijs-licht);
+    padding: 20px 0 32px;
+    font-size: 12px;
+    color: var(--grijs);
+    text-align: center;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--zwart);
+    color: var(--wit);
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--rood);
+    border-radius: 50%;
+    animation: pulse 1.4s infinite;
+  }
+
+  @media (max-width: 480px) {
+    h1.blog-title { font-size: 26px; }
+    h2.post-title { font-size: 19px; }
+    .post-content { font-size: 16px; }
+    .container { padding: 0 16px; }
+    article.post { padding-left: 22px; }
+    .topbar-right { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="container">
+    <div class="logo">Huisverkoop</div>
+    <div class="topbar-right" id="now">—</div>
+  </div>
+</div>
+
+<div class="container">
+  <header class="blog-header">
+    <span class="live-badge"><span class="live-dot"></span>Live</span>
+    <h1 class="blog-title" id="blogTitle">Live: De verkoop van mijn huis</h1>
+    <p class="blog-subtitle" id="blogSubtitle">Volg op de voet wat er gebeurt rondom de verkoop.</p>
+    <div class="meta-bar">
+      <span><strong id="postCount">0</strong> updates</span>
+      <span>Laatste update: <strong id="lastUpdate">—</strong></span>
+    </div>
+  </header>
+
+  <main class="timeline" id="timeline">
+    <div class="empty-state">
+      <h2>Een ogenblik…</h2>
+      <p>Updates worden geladen.</p>
+    </div>
+  </main>
+</div>
+
+<footer>
+  <div class="container">
+    Persoonlijk liveblog · pagina ververst automatisch
+  </div>
+</footer>
+
+<div class="toast" id="toast">Nieuwe update — tik om te lezen</div>
+
+<script>
+  const POSTS_URL = 'posts.json';
+  const REFRESH_MS = 30000;
+
+  let knownIds = new Set();
+  let isFirstLoad = true;
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function renderMarkdown(text) {
+    if (!text) return '';
+    let out = escapeHtml(text);
+    out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    const paragraphs = out.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`);
+    return paragraphs.join('');
+  }
+
+  function formatTime(iso) {
+    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatDateRelative(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((startOfDay - dDay) / 86400000);
+    if (diffDays === 0) return 'Vandaag';
+    if (diffDays === 1) return 'Gisteren';
+    return d.toLocaleDateString('nl-NL', {
+      day: 'numeric', month: 'long',
+      year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric'
+    });
+  }
+
+  function formatLastUpdate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'zojuist';
+    if (diff < 3600) return `${Math.floor(diff/60)} min geleden`;
+    if (diff < 86400) return `${Math.floor(diff/3600)} uur geleden`;
+    return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + ' om ' + formatTime(iso);
+  }
+
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('now').textContent =
+      now.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' }) +
+      ' · ' + now.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function tagClass(tag) {
+    if (!tag) return '';
+    const t = tag.toLowerCase();
+    if (['breaking', 'bod', 'verkocht', 'deal', 'spoed'].includes(t)) return 'tag-rood';
+    if (['mijlpaal', 'goed nieuws', 'gelukt'].includes(t)) return 'tag-groen';
+    return '';
+  }
+
+  function renderPosts(data) {
+    const timeline = document.getElementById('timeline');
+    const posts = (data.posts || []).slice().sort((a, b) =>
+      new Date(b.timestamp) - new Date(a.timestamp));
+
+    if (data.title) document.getElementById('blogTitle').textContent = data.title;
+    if (data.subtitle) document.getElementById('blogSubtitle').textContent = data.subtitle;
+    document.getElementById('postCount').textContent = posts.length;
+    if (posts.length > 0) {
+      document.getElementById('lastUpdate').textContent = formatLastUpdate(posts[0].timestamp);
+    }
+
+    if (!isFirstLoad) {
+      const newPost = posts.find(p => !knownIds.has(p.id));
+      if (newPost && !document.hidden && window.scrollY > 200) {
+        showToast();
+      }
+    }
+    knownIds = new Set(posts.map(p => p.id));
+
+    if (posts.length === 0) {
+      timeline.innerHTML = `
+        <div class="empty-state">
+          <h2>Nog geen updates</h2>
+          <p>De eerste update verschijnt hier zodra hij gepost is.</p>
+        </div>`;
+      return;
+    }
+
+    timeline.innerHTML = posts.map(p => `
+      <article class="post">
+        <div class="post-time">
+          <span>${formatTime(p.timestamp)}</span>
+          <span class="post-date">· ${formatDateRelative(p.timestamp)}</span>
+          ${p.tag ? `<span class="post-tag ${tagClass(p.tag)}">${escapeHtml(p.tag)}</span>` : ''}
+        </div>
+        ${p.title ? `<h2 class="post-title">${escapeHtml(p.title)}</h2>` : ''}
+        <div class="post-content">${renderMarkdown(p.content || '')}</div>
+        ${p.image ? `<img class="post-image" src="${escapeHtml(p.image)}" alt="" loading="lazy">` : ''}
+      </article>
+    `).join('');
+
+    isFirstLoad = false;
+  }
+
+  function showToast() {
+    const t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 6000);
+  }
+
+  document.getElementById('toast').addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('toast').classList.remove('show');
+  });
+
+  async function loadPosts() {
+    try {
+      const res = await fetch(POSTS_URL + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('Geen posts.json');
+      const data = await res.json();
+      renderPosts(data);
+    } catch (e) {
+      console.error(e);
+      if (isFirstLoad) {
+        document.getElementById('timeline').innerHTML = `
+          <div class="empty-state">
+            <h2>Kon updates niet laden</h2>
+            <p>Probeer de pagina te verversen.</p>
+          </div>`;
+      }
+    }
+  }
+
+  updateClock();
+  setInterval(updateClock, 30000);
+  loadPosts();
+  setInterval(loadPosts, REFRESH_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) loadPosts();
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "title": "Live: De verkoop van mijn huis",
+  "subtitle": "Volg op de voet wat er gebeurt rondom de verkoop.",
+  "posts": [
+    {
+      "id": "welcome001",
+      "timestamp": "2026-04-30T09:00:00.000Z",
+      "title": "Liveblog gestart",
+      "content": "Welkom! Vanaf nu houd ik jullie hier op de hoogte van hoe de verkoop van het huis verloopt. Updates verschijnen vanzelf — geen verversen nodig.\n\nLeuk dat jullie meekijken. 🏡",
+      "tag": "Update",
+      "image": null
+    }
+  ]
+}
