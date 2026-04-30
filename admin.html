@@ -346,7 +346,13 @@
     <div class="actions">
       <button class="btn primary" id="publishGhBtn" disabled>Publiceer naar GitHub</button>
       <button class="btn" id="downloadBtn">Download posts.json</button>
-      <button class="btn ghost" id="reloadBtn">Herlaad vanuit GitHub</button>
+    </div>
+    <div class="actions" style="margin-top:8px">
+      <button class="btn ghost" id="reloadBtn">Herlaad bestaande posts</button>
+      <label class="btn ghost" style="cursor:pointer">
+        Bestand laden…
+        <input type="file" id="fileInput" accept=".json,application/json" style="display:none">
+      </label>
     </div>
     <div class="field-hint" id="publishHint" style="margin-top:10px">
       Stel hieronder GitHub in voor één-klik publiceren. Zonder GitHub: download <code class="kbd">posts.json</code>, vervang het bestand in je repo en commit.
@@ -380,6 +386,11 @@
       <div class="field">
         <label for="ghBranch">Branch</label>
         <input id="ghBranch" type="text" placeholder="main" value="main">
+      </div>
+      <div class="field">
+        <label for="ghPagesUrl">Openbare site-URL <span style="text-transform:none;color:var(--grijs);font-weight:400">(optioneel — wordt anders afgeleid)</span></label>
+        <input id="ghPagesUrl" type="url" placeholder="https://gebruiker.github.io/repo/">
+        <div class="field-hint">Wordt gebruikt om bestaande posts op te halen zonder token.</div>
       </div>
       <div class="field">
         <label for="ghToken">Personal Access Token</label>
@@ -453,6 +464,7 @@
       $('ghRepo').value = s.repo || '';
       $('ghBranch').value = s.branch || 'main';
       $('ghToken').value = s.token || '';
+      $('ghPagesUrl').value = s.pagesUrl || '';
       return s;
     } catch { return {}; }
   }
@@ -461,7 +473,8 @@
       owner: $('ghOwner').value.trim(),
       repo: $('ghRepo').value.trim(),
       branch: $('ghBranch').value.trim() || 'main',
-      token: $('ghToken').value.trim()
+      token: $('ghToken').value.trim(),
+      pagesUrl: $('ghPagesUrl').value.trim()
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
     return s;
@@ -676,35 +689,84 @@
     showStatus('posts.json gedownload. Vervang het bestand in je repo en commit.', 'ok');
   }
 
-  async function reloadFromGitHub() {
-    if (!isConfigured()) {
-      // Probeer lokaal posts.json
+  function getPublicUrl() {
+    const s = getSettings();
+    if (s.pagesUrl) return s.pagesUrl.replace(/\/$/, '') + '/posts.json';
+    if (s.owner && s.repo) return `https://${s.owner}.github.io/${s.repo}/posts.json`;
+    return null;
+  }
+
+  async function loadFromPublicUrl() {
+    const url = getPublicUrl();
+    if (!url) return null;
+    const res = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} bij ${url}`);
+    return await res.json();
+  }
+
+  function loadFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
       try {
-        const res = await fetch('posts.json?t=' + Date.now(), { cache: 'no-store' });
-        if (!res.ok) throw new Error('Geen posts.json gevonden');
-        postsData = await res.json();
-        if (!postsData.posts) postsData.posts = [];
+        const data = JSON.parse(e.target.result);
+        if (!data.posts) data.posts = [];
+        postsData = data;
+        dirty = false;
         renderList();
-        showStatus('posts.json geladen vanuit dezelfde map.', 'ok');
-      } catch (e) {
-        showStatus('Geen posts.json gevonden. Stel GitHub in of begin met een lege tijdlijn.', 'warn');
+        showStatus(`Bestand geladen: ${data.posts.length} posts.`, 'ok');
+      } catch (err) {
+        showStatus('Bestand niet leesbaar: ' + err.message, 'err');
       }
-      return;
+    };
+    reader.readAsText(file);
+  }
+
+  async function reloadFromGitHub() {
+    // Probeer in volgorde: GitHub API → publieke URL → lokale fetch
+    if (isConfigured()) {
+      try {
+        const data = await ghGetPosts();
+        if (data) {
+          postsData = data;
+          if (!postsData.posts) postsData.posts = [];
+          renderList();
+          showStatus('Geladen vanuit GitHub (met token).', 'ok');
+          dirty = false;
+          return;
+        }
+      } catch (e) {
+        console.warn('GitHub API failed:', e);
+      }
     }
+    // Fallback 1: publieke URL (geen token nodig)
     try {
-      const data = await ghGetPosts();
+      const data = await loadFromPublicUrl();
       if (data) {
         postsData = data;
         if (!postsData.posts) postsData.posts = [];
         renderList();
-        showStatus('Geladen vanuit GitHub.', 'ok');
-      } else {
-        showStatus('posts.json bestaat nog niet in de repo. Voeg een eerste post toe en publiceer.', 'warn');
+        showStatus(`Geladen vanaf live site (${(data.posts || []).length} posts).`, 'ok');
+        dirty = false;
+        return;
       }
-      dirty = false;
     } catch (e) {
-      showStatus('Laden mislukt: ' + e.message, 'err', 0);
+      console.warn('Public URL failed:', e);
     }
+    // Fallback 2: lokale fetch (werkt alleen als admin.html online staat)
+    try {
+      const res = await fetch('posts.json?t=' + Date.now(), { cache: 'no-store' });
+      if (res.ok) {
+        postsData = await res.json();
+        if (!postsData.posts) postsData.posts = [];
+        renderList();
+        showStatus('posts.json geladen vanuit dezelfde map.', 'ok');
+        dirty = false;
+        return;
+      }
+    } catch (e) { /* ignore */ }
+
+    // Niks gelukt
+    showStatus('Geen bestaande posts geladen. Klik "Bestand laden…" en kies je posts.json, of vul GitHub-instellingen in.', 'warn', 0);
   }
 
   async function testConnection() {
@@ -734,6 +796,11 @@
   $('publishGhBtn').onclick = publishToGitHub;
   $('downloadBtn').onclick = downloadJson;
   $('reloadBtn').onclick = reloadFromGitHub;
+  $('fileInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) loadFromFile(file);
+    e.target.value = ''; // zodat zelfde bestand opnieuw kiezen werkt
+  };
   $('saveSettings').onclick = () => { saveSettings(); updateModeBadge(); showStatus('Instellingen opgeslagen.', 'ok'); };
   $('clearSettings').onclick = () => {
     if (!confirm('Wis alle GitHub-instellingen (incl. token)?')) return;
