@@ -282,6 +282,23 @@
 
   <div class="status" id="status"></div>
 
+  <!-- Waarschuwing als oude posts niet geladen konden worden -->
+  <div id="loadWarning" style="display:none;background:#fff3cd;border:2px solid #f0a020;border-radius:6px;padding:16px;margin-bottom:16px">
+    <div style="font-weight:700;color:#5d4500;margin-bottom:6px;font-size:15px">⚠ Bestaande posts zijn niet geladen</div>
+    <div style="font-size:14px;color:#5d4500;line-height:1.5;margin-bottom:12px">
+      Als je nu een nieuwe post toevoegt en publiceert, <strong>overschrijf je je oude posts</strong>.
+      Laad eerst de bestaande posts via één van deze opties:
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <label class="btn small" style="cursor:pointer;background:#f0a020">
+        📁 Laad bestaande posts.json
+        <input type="file" id="warningFileInput" accept=".json,application/json" style="display:none">
+      </label>
+      <button class="btn ghost small" id="warningOpenSettings">⚙ GitHub-token instellen</button>
+      <button class="btn ghost small" id="warningStartFresh">Toch leeg beginnen</button>
+    </div>
+  </div>
+
   <!-- Compose form -->
   <div class="card">
     <h2>
@@ -315,8 +332,16 @@
         </select>
       </div>
       <div class="field">
-        <label for="image">Afbeelding URL <span style="text-transform:none;color:var(--grijs);font-weight:400">(optioneel)</span></label>
-        <input id="image" type="url" placeholder="https://...">
+        <label for="image">Foto <span style="text-transform:none;color:var(--grijs);font-weight:400">(optioneel)</span></label>
+        <input id="imageFile" type="file" accept="image/*" style="display:none">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label for="imageFile" class="btn ghost small" style="cursor:pointer">📷 Kies foto…</label>
+          <button type="button" class="btn ghost small" id="imageUrlBtn">Of plak URL</button>
+          <span id="imageStatus" class="field-hint" style="margin:0">Geen foto gekozen</span>
+          <button type="button" class="btn danger" id="imageRemove" style="display:none">Verwijder</button>
+        </div>
+        <input id="image" type="hidden">
+        <img id="imagePreview" style="display:none;max-width:100%;margin-top:10px;border-radius:4px;border:1px solid var(--grijs-licht)">
       </div>
     </div>
 
@@ -421,6 +446,7 @@
   let editingId = null;
   let lastSha = null; // van GitHub, nodig voor PUT
   let dirty = false;
+  let loadedSuccessfully = false; // hebben we ooit oude posts geladen?
 
   // -------- Utils --------
   const $ = id => document.getElementById(id);
@@ -503,6 +529,114 @@
     }
   }
 
+  // -------- Image handling --------
+  const MAX_IMAGE_WIDTH = 1600;
+  const JPEG_QUALITY = 0.82;
+  let pendingImage = null; // { dataUrl, blob, originalName } voor publish-moment
+
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = e => { img.src = e.target.result; };
+      reader.onerror = () => reject(new Error('Kon bestand niet lezen'));
+      img.onload = () => {
+        const scale = Math.min(1, MAX_IMAGE_WIDTH / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; // voor PNG met transparantie → wit
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Compressie mislukt'));
+          const dr = new FileReader();
+          dr.onload = () => resolve({ dataUrl: dr.result, blob, width: w, height: h });
+          dr.onerror = () => reject(new Error('Kon resultaat niet lezen'));
+          dr.readAsDataURL(blob);
+        }, 'image/jpeg', JPEG_QUALITY);
+      };
+      img.onerror = () => reject(new Error('Geen geldig beeldbestand'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  async function handleImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      showStatus('Dat lijkt geen afbeelding.', 'err');
+      return;
+    }
+    $('imageStatus').textContent = 'Foto wordt verwerkt…';
+    try {
+      const result = await compressImage(file);
+      pendingImage = {
+        dataUrl: result.dataUrl,
+        blob: result.blob,
+        originalName: file.name,
+        width: result.width,
+        height: result.height
+      };
+      $('image').value = result.dataUrl; // voor lokale preview / fallback
+      $('imagePreview').src = result.dataUrl;
+      $('imagePreview').style.display = 'block';
+      $('imageRemove').style.display = 'inline-flex';
+      $('imageStatus').textContent = `Klaar (${result.width}×${result.height}, ${formatBytes(result.blob.size)})`;
+    } catch (e) {
+      showStatus('Foto verwerken mislukt: ' + e.message, 'err');
+      $('imageStatus').textContent = 'Geen foto gekozen';
+    }
+  }
+
+  function clearImage() {
+    pendingImage = null;
+    $('image').value = '';
+    $('imageFile').value = '';
+    $('imagePreview').style.display = 'none';
+    $('imagePreview').src = '';
+    $('imageRemove').style.display = 'none';
+    $('imageStatus').textContent = 'Geen foto gekozen';
+  }
+
+  // GitHub: upload foto naar images/ map, geef pad terug
+  async function ghUploadImage(blob, originalName) {
+    const s = getSettings();
+    if (!isConfigured()) throw new Error('GitHub niet ingesteld');
+    // Generate filename
+    const ext = (originalName.match(/\.[a-z0-9]+$/i) || ['.jpg'])[0].toLowerCase();
+    const safeExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext) ? ext : '.jpg';
+    const filename = `images/${Date.now()}-${Math.random().toString(36).slice(2, 8)}${safeExt}`;
+    // Read blob as base64
+    const base64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = () => rej(new Error('Kon bestand niet coderen'));
+      r.readAsDataURL(blob);
+    });
+    const url = `https://api.github.com/repos/${s.owner}/${s.repo}/contents/${filename}`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${s.token}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `Liveblog: foto upload (${filename})`,
+        content: base64,
+        branch: s.branch
+      })
+    });
+    if (!res.ok) throw new Error(`Foto-upload mislukt: ${res.status} ${await res.text()}`);
+    return filename; // relatief pad, werkt op de openbare site
+  }
   // -------- GitHub API --------
   async function ghGetPosts() {
     const s = getSettings();
@@ -587,7 +721,7 @@
     $('title').value = '';
     $('content').value = '';
     $('tag').value = '';
-    $('image').value = '';
+    clearImage();
     editingId = null;
     $('composeTitle').textContent = 'Nieuwe update';
     $('addBtn').textContent = 'Toevoegen aan tijdlijn';
@@ -601,7 +735,16 @@
     $('title').value = p.title || '';
     $('content').value = p.content || '';
     $('tag').value = p.tag || '';
-    $('image').value = p.image || '';
+    pendingImage = null;
+    if (p.image) {
+      $('image').value = p.image;
+      $('imagePreview').src = p.image;
+      $('imagePreview').style.display = 'block';
+      $('imageRemove').style.display = 'inline-flex';
+      $('imageStatus').textContent = p.image.startsWith('data:') ? 'Bestaande foto (ingebed)' : 'Bestaande foto';
+    } else {
+      clearImage();
+    }
     $('composeTitle').textContent = 'Bewerk update';
     $('addBtn').textContent = 'Wijzigingen opslaan';
     $('cancelEdit').style.display = 'inline';
@@ -635,18 +778,20 @@
         p.content = content;
         p.tag = tag || null;
         p.image = image || null;
-        // timestamp behouden bij edit
+        if (pendingImage) p._pendingImage = pendingImage;
       }
       showStatus('Post bijgewerkt. Vergeet niet te publiceren.', 'warn');
     } else {
-      postsData.posts.push({
+      const newPost = {
         id: uid(),
         timestamp: new Date().toISOString(),
         title,
         content,
         tag: tag || null,
         image: image || null
-      });
+      };
+      if (pendingImage) newPost._pendingImage = pendingImage;
+      postsData.posts.push(newPost);
       showStatus('Post toegevoegd. Klik op "Publiceren" om vrienden te laten meelezen.', 'warn', 6000);
     }
     dirty = true;
@@ -660,14 +805,38 @@
       showStatus('Stel eerst GitHub in onder ⚙ GitHub-instellingen.', 'err');
       return;
     }
+    if (!loadedSuccessfully) {
+      if (!confirm('⚠ Je oude posts zijn niet geladen. Als je nu publiceert, overschrijf je mogelijk al je eerdere posts. Toch doorgaan?')) {
+        return;
+      }
+    }
     const btn = $('publishGhBtn');
     btn.disabled = true;
     btn.textContent = 'Publiceren…';
     try {
-      // Pak laatste sha door eerst te lezen (in geval iets anders heeft gewijzigd)
-      try { await ghGetPosts(); } catch (e) { /* mogelijk 404, prima */ }
-      await ghPutPosts(postsData);
+      // Stap 1: upload alle pending images en vervang door pad
+      const postsWithImages = postsData.posts.filter(p => p._pendingImage);
+      for (let i = 0; i < postsWithImages.length; i++) {
+        const p = postsWithImages[i];
+        btn.textContent = `Foto uploaden ${i+1}/${postsWithImages.length}…`;
+        const path = await ghUploadImage(p._pendingImage.blob, p._pendingImage.originalName);
+        p.image = path; // bv. "images/abc123.jpg"
+        delete p._pendingImage;
+      }
+      // Stap 2: posts.json opslaan (zonder _pendingImage velden)
+      btn.textContent = 'Tekst publiceren…';
+      const cleanData = {
+        ...postsData,
+        posts: postsData.posts.map(p => {
+          const { _pendingImage, ...rest } = p;
+          return rest;
+        })
+      };
+      try { await ghGetPosts(); } catch (e) { /* mogelijk 404 */ }
+      await ghPutPosts(cleanData);
+      postsData = cleanData;
       dirty = false;
+      renderList();
       showStatus('Gepubliceerd! GitHub Pages kan tot ~1 minuut nodig hebben om te updaten.', 'ok', 8000);
     } catch (e) {
       console.error(e);
@@ -679,14 +848,29 @@
   }
 
   function downloadJson() {
-    const text = JSON.stringify(postsData, null, 2);
+    if (!loadedSuccessfully) {
+      if (!confirm('⚠ Je oude posts zijn niet geladen. Als je dit bestand uploadt naar GitHub, overschrijf je mogelijk al je eerdere posts. Toch doorgaan?')) {
+        return;
+      }
+    }
+    const cleanData = {
+      ...postsData,
+      posts: postsData.posts.map(p => {
+        const { _pendingImage, ...rest } = p;
+        return rest; // image is al een data-URL via $('image').value, prima
+      })
+    };
+    const text = JSON.stringify(cleanData, null, 2);
+    const sizeMB = text.length / 1024 / 1024;
     const blob = new Blob([text], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'posts.json';
     a.click();
     URL.revokeObjectURL(a.href);
-    showStatus('posts.json gedownload. Vervang het bestand in je repo en commit.', 'ok');
+    let msg = 'posts.json gedownload (' + sizeMB.toFixed(2) + ' MB). Vervang het bestand in je repo en commit.';
+    if (sizeMB > 5) msg += ' ⚠ Bestand wordt groot — overweeg GitHub-token zodat foto\'s apart worden geüpload.';
+    showStatus(msg, sizeMB > 5 ? 'warn' : 'ok', 0);
   }
 
   function getPublicUrl() {
@@ -712,6 +896,8 @@
         if (!data.posts) data.posts = [];
         postsData = data;
         dirty = false;
+        loadedSuccessfully = true;
+        updateLoadWarning();
         renderList();
         showStatus(`Bestand geladen: ${data.posts.length} posts.`, 'ok');
       } catch (err) {
@@ -730,7 +916,9 @@
           postsData = data;
           if (!postsData.posts) postsData.posts = [];
           renderList();
-          showStatus('Geladen vanuit GitHub (met token).', 'ok');
+          loadedSuccessfully = true;
+          updateLoadWarning();
+          showStatus(`Geladen vanuit GitHub (${postsData.posts.length} posts).`, 'ok');
           dirty = false;
           return;
         }
@@ -745,6 +933,8 @@
         postsData = data;
         if (!postsData.posts) postsData.posts = [];
         renderList();
+        loadedSuccessfully = true;
+        updateLoadWarning();
         showStatus(`Geladen vanaf live site (${(data.posts || []).length} posts).`, 'ok');
         dirty = false;
         return;
@@ -759,14 +949,27 @@
         postsData = await res.json();
         if (!postsData.posts) postsData.posts = [];
         renderList();
+        loadedSuccessfully = true;
+        updateLoadWarning();
         showStatus('posts.json geladen vanuit dezelfde map.', 'ok');
         dirty = false;
         return;
       }
     } catch (e) { /* ignore */ }
 
-    // Niks gelukt
-    showStatus('Geen bestaande posts geladen. Klik "Bestand laden…" en kies je posts.json, of vul GitHub-instellingen in.', 'warn', 0);
+    // Niks gelukt — laat een hele duidelijke waarschuwing zien
+    loadedSuccessfully = false;
+    updateLoadWarning();
+  }
+
+  function updateLoadWarning() {
+    const w = $('loadWarning');
+    if (!w) return;
+    if (loadedSuccessfully) {
+      w.style.display = 'none';
+    } else {
+      w.style.display = 'block';
+    }
   }
 
   async function testConnection() {
@@ -799,7 +1002,42 @@
   $('fileInput').onchange = (e) => {
     const file = e.target.files[0];
     if (file) loadFromFile(file);
-    e.target.value = ''; // zodat zelfde bestand opnieuw kiezen werkt
+    e.target.value = '';
+  };
+  $('imageFile').onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) handleImageFile(file);
+  };
+  $('imageRemove').onclick = clearImage;
+  $('imageUrlBtn').onclick = () => {
+    const url = prompt('Plak een afbeelding-URL (https://...):', $('image').value.startsWith('http') ? $('image').value : '');
+    if (url === null) return;
+    if (url === '') { clearImage(); return; }
+    if (!/^https?:\/\//.test(url)) { showStatus('URL moet met http:// of https:// beginnen.', 'err'); return; }
+    pendingImage = null; // geen blob, alleen URL
+    $('image').value = url;
+    $('imagePreview').src = url;
+    $('imagePreview').style.display = 'block';
+    $('imageRemove').style.display = 'inline-flex';
+    $('imageStatus').textContent = 'Externe URL';
+  };
+
+  // Banner-knoppen
+  $('warningFileInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) loadFromFile(file);
+    e.target.value = '';
+  };
+  $('warningOpenSettings').onclick = () => {
+    $('settingsDetails').open = true;
+    $('settingsDetails').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('warningStartFresh').onclick = () => {
+    if (confirm('Weet je zeker dat je leeg wilt beginnen? Eventuele eerdere posts worden bij publiceren overschreven.')) {
+      loadedSuccessfully = true; // gebruiker heeft expliciet bevestigd
+      updateLoadWarning();
+      showStatus('Oké, je begint met een lege tijdlijn.', 'warn');
+    }
   };
   $('saveSettings').onclick = () => { saveSettings(); updateModeBadge(); showStatus('Instellingen opgeslagen.', 'ok'); };
   $('clearSettings').onclick = () => {
